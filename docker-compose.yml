@@ -1,3 +1,30 @@
+x-airflow: &airflow
+  image: apache/airflow:2.10.5
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    PYTHONPATH: /opt/airflow
+    # the dag talks to the databases over the compose network, not the published ports
+    MYSQL_HOST: mysql
+    MYSQL_PORT: 3306
+    MYSQL_USER: ${MYSQL_USER:-ecom}
+    MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ecom}
+    MYSQL_DATABASE: ${MYSQL_DATABASE:-ecom}
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_USER: ${POSTGRES_USER:-warehouse}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse}
+    POSTGRES_DB: ${POSTGRES_DB:-warehouse}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./extraction:/opt/airflow/extraction:ro
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+
 services:
   mysql:
     image: mysql:8.0
@@ -37,6 +64,67 @@ services:
       timeout: 5s
       retries: 10
 
+  # airflow's own metadata db, kept separate from the warehouse on purpose
+  airflow-db:
+    image: postgres:16
+    container_name: ecom-airflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow
+    container_name: ecom-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password ${AIRFLOW_ADMIN_PASSWORD:-admin} \
+          --firstname admin --lastname admin --role Admin --email admin@example.com || true
+    restart: on-failure
+
+  airflow-scheduler:
+    <<: *airflow
+    container_name: ecom-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-webserver:
+    <<: *airflow
+    container_name: ecom-airflow-web
+    command: webserver
+    restart: unless-stopped
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
 volumes:
   mysql_data:
   pg_data:
+  airflow_db_data:
+  airflow_logs:
