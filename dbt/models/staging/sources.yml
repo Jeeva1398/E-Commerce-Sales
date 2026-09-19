@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    description: landing tables loaded by the extraction job, one full refresh per run
+    schema: raw
+    tables:
+      - name: categories
+      - name: customers
+      - name: products
+      - name: orders
+      - name: order_items
