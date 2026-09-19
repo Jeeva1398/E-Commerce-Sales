@@ -20,6 +20,7 @@ load_dotenv()
 
 DDL = Path(__file__).with_name("raw_tables.sql")
 CHUNK = 5000
+NULL_MARKER = "\\N"
 
 TABLES = {
     "categories": ["category_id", "name", "created_at"],
@@ -72,8 +73,7 @@ def to_buffer(rows):
     buf = io.StringIO()
     w = csv.writer(buf)
     for row in rows:
-        # \N is the copy null marker below; anything else goes through as text
-        w.writerow(["\N" if v is None else v for v in row])
+        w.writerow([NULL_MARKER if v is None else v for v in row])
     buf.seek(0)
     return buf
 
@@ -92,7 +92,7 @@ def copy_table(my, pg, table, columns):
                 if not rows:
                     break
                 dest.copy_expert(
-                    f"COPY raw.{table} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '\N')",
+                    f"COPY raw.{table} ({cols}) FROM STDIN WITH (FORMAT csv, NULL '{NULL_MARKER}')",
                     to_buffer(rows),
                 )
                 n += len(rows)
