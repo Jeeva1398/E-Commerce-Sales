@@ -11,7 +11,7 @@ Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md
 - [x] Phase 2 — extraction into the Postgres `raw` schema
 - [x] Phase 3 — Airflow DAG for the extraction
 - [x] Phase 4 — dbt models + tests
-- [ ] Phase 5 — full pipeline in one DAG
+- [x] Phase 5 — full pipeline in one DAG
 - [ ] Phase 6 — Metabase dashboards
 - [ ] Phase 7 — polish
 
@@ -76,9 +76,15 @@ docker compose up -d
 
 UI at http://localhost:8080, login `admin` / `admin` (`AIRFLOW_ADMIN_PASSWORD` in `.env`).
 
-One DAG, `ecom_extract`: a single `extract_to_raw` task calling the Phase 2 extraction, daily at
-03:00, `catchup=False`, `max_active_runs=1`. Two retries five minutes apart. The task returns the
-per-table row counts so they show up in XCom as well as the log.
+One DAG, `ecom_pipeline`, daily at 03:00, `catchup=False`, `max_active_runs=1`:
+
+```
+extract_to_raw  ->  dbt_run  ->  dbt_test
+```
+
+`extract_to_raw` calls the extraction directly and returns the per-table row counts, so they show
+up in XCom as well as the log. The two dbt steps shell out to the venv binary. Every task gets two
+retries five minutes apart.
 
 The DAG imports `extraction.extract_to_staging` directly rather than shelling out — the
 `extraction/` folder is mounted into the image and `PYTHONPATH` points at `/opt/airflow`, so the
@@ -119,3 +125,15 @@ together in dependency order — 53 nodes, clean.
 
 The fact reconciles exactly to the source: 8000 distinct orders, 24061 lines, and
 `sum(line_total)` matches `sum(total_amount)` on `raw.orders` to the rupee.
+
+### Rebuilding the image
+
+The Airflow services run a locally built image (`ecom-airflow`), not the stock one. After any
+change to `airflow/Dockerfile`:
+
+```bash
+docker compose up -d --build
+```
+
+`docker compose build` on its own updates the image but leaves the running containers on the old
+one, which shows up as a confusing `exit code 127` from the dbt tasks.
