@@ -1,5 +1,6 @@
 x-airflow: &airflow
-  image: apache/airflow:2.10.5
+  build: ./airflow
+  image: ecom-airflow:2.10.5
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
@@ -17,9 +18,11 @@ x-airflow: &airflow
     POSTGRES_USER: ${POSTGRES_USER:-warehouse}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse}
     POSTGRES_DB: ${POSTGRES_DB:-warehouse}
+    DBT_PROFILES_DIR: /opt/airflow/dbt
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./extraction:/opt/airflow/extraction:ro
+    - ./dbt:/opt/airflow/dbt
     - airflow_logs:/opt/airflow/logs
   depends_on:
     airflow-db:
@@ -122,6 +125,18 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
+
+  # run-only helper: docker compose run --rm dbt run
+  dbt:
+    <<: *airflow
+    container_name: ecom-dbt
+    profiles: ["tools"]
+    entrypoint: ["/home/airflow/dbt-venv/bin/dbt"]
+    working_dir: /opt/airflow/dbt
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   mysql_data:
