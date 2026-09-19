@@ -9,7 +9,7 @@ Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md
 
 - [x] Phase 1 — project setup, MySQL source schema, Faker seed
 - [x] Phase 2 — extraction into the Postgres `raw` schema
-- [ ] Phase 3 — Airflow DAG for the extraction
+- [x] Phase 3 — Airflow DAG for the extraction
 - [ ] Phase 4 — dbt models + tests
 - [ ] Phase 5 — full pipeline in one DAG
 - [ ] Phase 6 — Metabase dashboards
@@ -64,3 +64,27 @@ before the first extraction.
 Full refresh is the deliberate starting point: the source is small, and it keeps the first Airflow
 DAG simple. `orders`/`products`/`customers` carry `updated_at`, so switching to an incremental pull
 is a change to this script and not to the schema.
+
+## Orchestration
+
+Airflow runs on the same compose stack (LocalExecutor, its own Postgres for metadata — kept
+separate from the warehouse so a `dbt`-shaped mistake can't touch Airflow's own state).
+
+```bash
+docker compose up -d
+```
+
+UI at http://localhost:8080, login `admin` / `admin` (`AIRFLOW_ADMIN_PASSWORD` in `.env`).
+
+One DAG, `ecom_extract`: a single `extract_to_raw` task calling the Phase 2 extraction, daily at
+03:00, `catchup=False`, `max_active_runs=1`. Two retries five minutes apart. The task returns the
+per-table row counts so they show up in XCom as well as the log.
+
+The DAG imports `extraction.extract_to_staging` directly rather than shelling out — the
+`extraction/` folder is mounted into the image and `PYTHONPATH` points at `/opt/airflow`, so the
+same code runs by hand and under Airflow. Inside the network it reaches the databases by service
+name on their internal ports, not the published 3307/5433.
+
+Failures are logged from both `on_failure_callback` and `on_retry_callback`; the failure-only
+callback doesn't fire until retries are exhausted, so on its own it would miss every intermediate
+attempt.
