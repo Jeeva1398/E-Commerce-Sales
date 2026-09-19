@@ -8,7 +8,7 @@ Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md
 ## Status
 
 - [x] Phase 1 — project setup, MySQL source schema, Faker seed
-- [ ] Phase 2 — extraction into the Postgres `raw` schema
+- [x] Phase 2 — extraction into the Postgres `raw` schema
 - [ ] Phase 3 — Airflow DAG for the extraction
 - [ ] Phase 4 — dbt models + tests
 - [ ] Phase 5 — full pipeline in one DAG
@@ -47,3 +47,20 @@ running locally.
 `categories`, `customers`, `products`, `orders`, `order_items` — normalised OLTP shape, FKs
 enforced. `orders`/`order_items` are the transactional tables the warehouse fact table is built
 from in Phase 4.
+
+## Extraction
+
+```bash
+python extraction/extract_to_staging.py
+```
+
+Reads the five source tables over a streaming cursor and `COPY`s them into `raw.*` in Postgres.
+Full refresh — each landing table is truncated and reloaded, and the whole run is one transaction,
+so a failure halfway through leaves the previous load intact. Rows get an `_extracted_at` stamp.
+
+`raw_tables.sql` is idempotent and applied by the script itself, so there's nothing to run by hand
+before the first extraction.
+
+Full refresh is the deliberate starting point: the source is small, and it keeps the first Airflow
+DAG simple. `orders`/`products`/`customers` carry `updated_at`, so switching to an incremental pull
+is a change to this script and not to the schema.
