@@ -2,17 +2,21 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow import DAG
+from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 
 from extraction.extract_to_staging import run
 
 log = logging.getLogger(__name__)
 
+DBT = "/home/airflow/dbt-venv/bin/dbt"
+DBT_DIR = "/opt/airflow/dbt"
+
 
 def log_failure(context):
     ti = context["task_instance"]
     log.error(
-        "extraction failed: task=%s run=%s attempt=%s/%s",
+        "pipeline step failed: task=%s run=%s attempt=%s/%s",
         ti.task_id,
         context["run_id"],
         ti.try_number,
@@ -33,8 +37,8 @@ default_args = {
 }
 
 with DAG(
-    dag_id="ecom_extract",
-    description="pull the mysql source tables into raw.* in the warehouse",
+    dag_id="ecom_pipeline",
+    description="mysql -> raw -> dbt marts, tested",
     start_date=datetime(2026, 9, 1),
     schedule="0 3 * * *",
     catchup=False,
@@ -43,4 +47,16 @@ with DAG(
     tags=["ecom"],
 ):
     # run() returns the per-table row counts, which land in xcom
-    PythonOperator(task_id="extract_to_raw", python_callable=run)
+    extract = PythonOperator(task_id="extract_to_raw", python_callable=run)
+
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        bash_command=f"{DBT} run --project-dir {DBT_DIR} --profiles-dir {DBT_DIR}",
+    )
+
+    dbt_test = BashOperator(
+        task_id="dbt_test",
+        bash_command=f"{DBT} test --project-dir {DBT_DIR} --profiles-dir {DBT_DIR}",
+    )
+
+    extract >> dbt_run >> dbt_test
