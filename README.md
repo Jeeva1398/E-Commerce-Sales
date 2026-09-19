@@ -10,7 +10,7 @@ Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md
 - [x] Phase 1 — project setup, MySQL source schema, Faker seed
 - [x] Phase 2 — extraction into the Postgres `raw` schema
 - [x] Phase 3 — Airflow DAG for the extraction
-- [ ] Phase 4 — dbt models + tests
+- [x] Phase 4 — dbt models + tests
 - [ ] Phase 5 — full pipeline in one DAG
 - [ ] Phase 6 — Metabase dashboards
 - [ ] Phase 7 — polish
@@ -88,3 +88,34 @@ name on their internal ports, not the published 3307/5433.
 Failures are logged from both `on_failure_callback` and `on_retry_callback`; the failure-only
 callback doesn't fire until retries are exhausted, so on its own it would miss every intermediate
 attempt.
+
+## Transformation
+
+```bash
+docker compose run --rm dbt build      # or: dbt run / dbt test
+```
+
+dbt runs from the same image as Airflow but out of its own venv at
+`/home/airflow/dbt-venv` — dbt and Airflow pin incompatible versions of jinja2 and friends, and
+installing them side by side breaks one of them. The venv keeps both happy and means Phase 5 can
+call dbt without a second image.
+
+Layers, following the dbt convention:
+
+| Layer | Schema | Materialised as | What it does |
+|---|---|---|---|
+| staging | `analytics_staging` | views | one model per source table — trim, cast, rename, derive `is_revenue` |
+| intermediate | `analytics_intermediate` | view | `int_order_lines` joins items to their order and product once |
+| marts | `analytics_marts` | tables | the star schema |
+
+`fact_orders` is at **order-line grain** — one row per `order_item`, not per order. That's what
+lets `dim_products` join to it at all; the price of it is that order-level counts need
+`count(distinct order_id)`. `dim_date` is generated from the order range with `generate_series`
+and padded out to whole years, so no package dependency and no gaps when new data arrives.
+
+43 tests: unique/not-null on every key, referential integrity from the fact to all three dims and
+across the staging layer, and `accepted_values` on order status. `dbt build` runs models and tests
+together in dependency order — 53 nodes, clean.
+
+The fact reconciles exactly to the source: 8000 distinct orders, 24061 lines, and
+`sum(line_total)` matches `sum(total_amount)` on `raw.orders` to the rupee.
