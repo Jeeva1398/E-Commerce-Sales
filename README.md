@@ -168,3 +168,82 @@ fact and three dims — `raw` and the staging layers stay out of the way.
 
 Revenue here already excludes cancelled and returned orders — that's the `is_revenue` flag applied
 back in staging, not a filter repeated in every question.
+
+## Cloud deployment
+
+The compose stack is the full local setup. There's also a free-tier cloud version of the same
+pipeline, with Airflow and Metabase swapped for things that can be hosted for nothing:
+
+| Local | Cloud |
+|---|---|
+| MySQL container | MySQL **service container** in the Actions job, seeded on every run |
+| Postgres container | **Supabase** Postgres |
+| Airflow DAG at 03:00 | **GitHub Actions** cron at 03:00 UTC (`.github/workflows/pipeline.yml`) |
+| dbt in the Airflow image | dbt installed straight into the runner |
+| Metabase | **Streamlit Cloud** (`streamlit_app/`) — Metabase needs more memory than any free host gives |
+
+The extraction and dbt code is the same in both. The only difference is config: everything reads
+`POSTGRES_*`, and `POSTGRES_SSLMODE=require` is set for Supabase.
+
+The seed uses fixed Faker/random seeds, so each run produces the same rows. Dates are relative to
+the day of the run, though, so the two-year window rolls forward each day.
+
+### 1. Supabase
+
+1. Create a project and note the database password.
+2. **Connect → Session pooler** gives host, port, user and database. Use the pooler, not the
+   direct connection: the direct host is IPv6-only and GitHub runners can't reach it. Session
+   mode (port 5432) rather than transaction mode (6543), because the extraction uses `COPY`.
+
+   ```
+   host      aws-0-<region>.pooler.supabase.com
+   port      5432
+   user      postgres.<project-ref>
+   database  postgres
+   ```
+
+### 2. GitHub Actions
+
+Repo **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Value |
+|---|---|
+| `SUPABASE_HOST` | pooler host |
+| `SUPABASE_PORT` | `5432` |
+| `SUPABASE_USER` | `postgres.<project-ref>` |
+| `SUPABASE_PASSWORD` | database password |
+| `SUPABASE_DB` | `postgres` |
+
+Then **Actions → pipeline → Run workflow** for the first load. After that it runs daily.
+
+Two free-tier details the daily run takes care of: Supabase pauses a project after a week with
+no activity, and GitHub disables scheduled workflows in a repo with no commits for 60 days. The
+second one needs a click on "Enable workflow" if it ever happens.
+
+### 3. Read-only dashboard user
+
+After the first run, open the Supabase SQL editor and run `scripts/supabase_readonly.sql` (change
+the password first). The dashboard only ever gets `select` on `analytics_marts`. Default
+privileges are set as well, because dbt recreates the mart tables on every run and plain grants
+would be lost overnight.
+
+Through the pooler, that role logs in as `dashboard_ro.<project-ref>`.
+
+### 4. Streamlit Cloud
+
+1. share.streamlit.io → **Create app** → this repo, branch `main`, main file
+   `streamlit_app/app.py`.
+2. **Advanced settings → Secrets**: paste the contents of
+   `streamlit_app/.streamlit/secrets.toml.example`, filled in with the read-only user.
+
+Streamlit Cloud installs `streamlit_app/requirements.txt`, not the root one. Query results are
+cached for an hour. The data only changes once a day, and the cache keeps page views from
+hitting the free-tier database.
+
+Local run:
+
+```bash
+pip install -r streamlit_app/requirements.txt
+cp streamlit_app/.streamlit/secrets.toml.example streamlit_app/.streamlit/secrets.toml   # fill in
+streamlit run streamlit_app/app.py
+```

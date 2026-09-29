@@ -1,0 +1,78 @@
+# cloud version of the ecom_pipeline dag: same extract -> dbt run -> dbt test,
+# but the mysql source is a throwaway service container seeded on every run and
+# the warehouse is supabase. the docker compose stack is still the full local setup.
+name: pipeline
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily - also keeps the free supabase project from pausing
+  workflow_dispatch:
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: ecom
+          MYSQL_USER: ecom
+          MYSQL_PASSWORD: ecom
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: ecom
+      MYSQL_PASSWORD: ecom
+      MYSQL_DATABASE: ecom
+      # session pooler, not the direct host - the direct host is ipv6 only and
+      # github runners have no ipv6. session mode (5432) is needed for COPY.
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_SSLMODE: require
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install
+        run: pip install -r requirements.txt dbt-core==1.11.15 dbt-postgres==1.11.0
+
+      - name: source schema
+        run: mysql -h 127.0.0.1 -P 3306 -u ecom -pecom ecom < mysql-source/schema.sql
+
+      - name: seed source
+        run: python mysql-source/seed.py
+
+      - name: extract_to_raw
+        run: python extraction/extract_to_staging.py
+
+      - name: dbt_run
+        working-directory: dbt
+        run: dbt run
+
+      - name: dbt_test
+        working-directory: dbt
+        run: dbt test

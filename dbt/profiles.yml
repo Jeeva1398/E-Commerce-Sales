@@ -8,5 +8,6 @@ ecom:
       user: "{{ env_var('POSTGRES_USER', 'warehouse') }}"
       password: "{{ env_var('POSTGRES_PASSWORD', 'warehouse') }}"
       dbname: "{{ env_var('POSTGRES_DB', 'warehouse') }}"
+      sslmode: "{{ env_var('POSTGRES_SSLMODE', 'prefer') }}"
       schema: analytics
       threads: 4

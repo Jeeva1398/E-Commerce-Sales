@@ -61,6 +61,8 @@ def pg_conn():
         user=os.getenv("POSTGRES_USER", "warehouse"),
         password=os.getenv("POSTGRES_PASSWORD", "warehouse"),
         dbname=os.getenv("POSTGRES_DB", "warehouse"),
+        # supabase needs require; libpq's own default is prefer, so local is unchanged
+        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer"),
     )
 
 
