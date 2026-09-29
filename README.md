@@ -12,7 +12,7 @@ Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md
 - [x] Phase 3 — Airflow DAG for the extraction
 - [x] Phase 4 — dbt models + tests
 - [x] Phase 5 — full pipeline in one DAG
-- [ ] Phase 6 — Metabase dashboards
+- [x] Phase 6 — Metabase dashboards
 - [ ] Phase 7 — polish
 
 ## Stack
@@ -137,3 +137,34 @@ docker compose up -d --build
 
 `docker compose build` on its own updates the image but leaves the running containers on the old
 one, which shows up as a confusing `exit code 127` from the dbt tasks.
+
+## BI layer
+
+```bash
+docker compose up -d metabase
+python metabase/provision.py
+```
+
+Metabase at http://localhost:3000. First boot takes a minute or so while the JVM starts and it
+migrates its own app db.
+
+`provision.py` is there so the dashboard isn't trapped in one person's container: it completes the
+setup wizard, registers the warehouse as a data source, creates the four saved questions and lays
+them out on one dashboard. Re-running it is safe — it logs in if setup is already done and skips
+anything that exists.
+
+Metabase keeps its state in its own Postgres rather than the default embedded H2. H2 is fine until
+an unclean shutdown corrupts it, and hand-built dashboards are not something you want to rebuild.
+
+The connection uses an inclusion filter on `analytics_marts`, so the only things browsable are the
+fact and three dims — `raw` and the staging layers stay out of the way.
+
+| Card | Shape |
+|---|---|
+| Revenue by month | line, `sum(revenue)` over `dim_date` |
+| Order volume by month | line, `count(distinct order_id)` |
+| Top 10 products by revenue | bar, joined to `dim_products` |
+| Customer lifetime value | table, top 20 by `sum(revenue)` |
+
+Revenue here already excludes cancelled and returned orders — that's the `is_revenue` flag applied
+back in staging, not a filter repeated in every question.
