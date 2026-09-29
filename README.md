@@ -1,7 +1,13 @@
 # E-Commerce Sales Data Pipeline
 
+[![pipeline](https://github.com/Jeeva1398/E-Commerce-Sales/actions/workflows/pipeline.yml/badge.svg)](https://github.com/Jeeva1398/E-Commerce-Sales/actions/workflows/pipeline.yml)
+
+**Live dashboard: https://jeeva-ecom-sales.streamlit.app/**
+
 Batch ELT pipeline over a simulated e-commerce OLTP system: MySQL source -> Postgres warehouse
--> dbt star schema -> Metabase dashboards, orchestrated with Airflow. All local, via Docker Compose.
+-> dbt star schema -> Metabase dashboards, orchestrated with Airflow. The full stack runs locally
+via Docker Compose. A free-tier cloud version (GitHub Actions -> Supabase -> Streamlit) runs
+daily and feeds the live dashboard; see [Cloud deployment](#cloud-deployment).
 
 Build log / architecture notes: `Ecommerce-Data-Pipeline-Architecture-Context.md`
 
