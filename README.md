@@ -184,7 +184,7 @@ pipeline, with Airflow and Metabase swapped for things that can be hosted for no
 |---|---|
 | MySQL container | MySQL **service container** in the Actions job, seeded on every run |
 | Postgres container | **Supabase** Postgres |
-| Airflow DAG at 03:00 | **GitHub Actions** cron at 03:00 UTC (`.github/workflows/pipeline.yml`) |
+| Airflow DAG at 03:00 | **GitHub Actions** cron at 03:17 UTC (`.github/workflows/pipeline.yml`) |
 | dbt in the Airflow image | dbt installed straight into the runner |
 | Metabase | **Streamlit Cloud** (`streamlit_app/`) — Metabase needs more memory than any free host gives |
 
