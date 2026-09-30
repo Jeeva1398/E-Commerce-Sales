@@ -1,0 +1,32 @@
+# streamlit cloud sleeps the dashboard after 12h with no visitor. this opens it
+# in a headless browser every 5h so it's always up when someone follows the link.
+name: keep-awake
+
+on:
+  schedule:
+    - cron: "41 */5 * * *" # off the top of the hour, see pipeline.yml
+  workflow_dispatch:
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: true
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install
+        run: |
+          pip install playwright==1.63.0
+          playwright install --with-deps chromium
+
+      - name: open dashboard
+        run: python scripts/wake_streamlit.py https://jeeva-ecom-sales.streamlit.app/

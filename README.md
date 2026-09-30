@@ -253,3 +253,11 @@ pip install -r streamlit_app/requirements.txt
 cp streamlit_app/.streamlit/secrets.toml.example streamlit_app/.streamlit/secrets.toml   # fill in
 streamlit run streamlit_app/app.py
 ```
+
+### Keeping the dashboard awake
+
+Streamlit Cloud puts a free app to sleep after 12 hours without a visitor, and the next person
+waits through a cold start. `.github/workflows/keep-awake.yml` opens the dashboard in a headless
+browser every 5 hours (`scripts/wake_streamlit.py`), and presses the wake button if it's already
+asleep. A plain `curl` doesn't count as a visit, because the app only runs once a browser opens
+its websocket, so it has to be a real browser.
